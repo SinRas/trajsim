@@ -42,7 +42,7 @@ df_trajectory_bucketed_reconstructed:
     lng: (float) longitude
 # Trajectory Processed
 df_trajectory_processed:
-  description: "Processed Trajecty should have be: Bucketed, Reconstructed, Hashed".
+  description: "Processed Trajecty should have be: Bucketed, Reconstructed, with Locations Described".
   type: pandas.dataframe, spark.dataframe
   columns:
     id_user: (int) user identifier
