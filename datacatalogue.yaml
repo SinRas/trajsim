@@ -1,0 +1,59 @@
+# Points
+points:
+  description: "Points in space to be partitioned."
+  type: numpy.ndarray
+  columns:
+    lat: (float) latitude
+    lng: (float) longitude
+# Trajectories Raw LatLng
+df_trajectory_raw_latlng:
+  description: "Trajectory points of each user on the map."
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier number
+    timestamp: (int) timestamp of record
+    lat: (float) latitude
+    lng: (float) longitude
+# Trajectories Raw LocationID
+df_trajectory_raw_locationid:
+  description: "Trajectory points of each user by location id."
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier
+    timestamp: (int) timestamp of record
+    id_location: (int) location identifier
+# Trajectory Bucketed
+df_trajectory_bucketed:
+  description: "Trajectory points of user bucketed into specific intervals."
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier
+    id_timestamp: (int) ordered timestamp bucket identifier (possible missing ids)
+    lat: (float) latitude
+    lng: (float) longitude
+# Trajectory Bucketed Reconstructed
+df_trajectory_bucketed_reconstructed:
+  description: "Trajectory points of user bucketed into specific intervals. Then reconstructed."
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier
+    id_timestamp: (int) ordered timestamp bucket identifier (all ids should be present)
+    lat: (float) latitude
+    lng: (float) longitude
+# Trajectory Processed
+df_trajectory_processed:
+  description: "Processed Trajecty should have be: Bucketed, Reconstructed, Hashed".
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier
+    id_timestamp: (int) ordered timestamp bucket identifier (all ids should be present)
+    lat: (float) latitude
+    lng: (float) longitude
+    location_descriptors: (list/Array[Any]) list of location descriptor used to identify location
+# User Hashes
+df_user_hashes:
+  description: "Hashes calculated for each user"
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier
+    hashes: (list/Array[Int]) hashes assigned to each user for fast comparison of users.
