@@ -3,6 +3,8 @@
 Methods to bucket trajectory data into fixed intervals.
 """
 # Modules
+import numpy as np
+import pandas as pd
 
 # Parameters
 TIMESTAMP_BASE = 946684800
