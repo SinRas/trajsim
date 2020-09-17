@@ -98,7 +98,12 @@ class TrajectoryReconstructorLinear( TrajectoryReconstructorBase ):
                         # New User Encountered
                         data.extend([
                             [id_user, t, lat, lng] for t in range(
-                                id_timestamp_min, id_timestamp
+                                id_timestamp, id_timestamp_max + 1
+                            )
+                        ])
+                        data.extend([
+                            [id_user_next, t, lat, lng] for t in range(
+                                id_timestamp_min, id_timestamp_next
                             )
                         ])
                 else:
