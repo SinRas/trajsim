@@ -75,7 +75,7 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
             id_timestamps_selected = set(np.random.choice(
                 np.arange( id_timestamp_min, id_timestamp_max+1 ),
                 self.n_hashes,
-                replace = False
+                replace = True
             ))
             # Filter
             df_result = df_trajectory_processed[
