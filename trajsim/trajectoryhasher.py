@@ -9,7 +9,11 @@ import numpy as np
 import pandas as pd
 
 # Parameters
+# HASHPRIME = 11
+# HASHPRIME = 101
+# HASHPRIME = 5011
 HASHPRIME = 2038074743
+# HASHPRIME = 988666444411111
 
 # Methods
 
@@ -68,15 +72,16 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
             id_timestamp_min = df_trajectory_processed['id_timestamp'].min()
             id_timestamp_max = df_trajectory_processed['id_timestamp'].max()
             # Select ID TimeStamp for Hashes
-            id_timestamps_selected = set(np.random.choice(
+            id_timestamps_selected = np.random.choice(
                 np.arange( id_timestamp_min, id_timestamp_max+1 ),
                 self.n_hashes,
                 replace = False
-            ))
+            ) if self.n_hashes < (id_timestamp_max - id_timestamp_min + 1) else list(range( id_timestamp_min, id_timestamp_max+1 ))
+            id_timestamps_selected_set = set(id_timestamps_selected)
             # Filter
             df_result = df_trajectory_processed[
                 df_trajectory_processed['id_timestamp'].map(
-                    lambda x:  x in id_timestamps_selected
+                    lambda x:  x in id_timestamps_selected_set
                 )
             ].copy().sort_values(['id_user', 'id_timestamp'])
             # Index Locations
@@ -105,6 +110,39 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
                 df_hashes.rename(columns={'location_indices':colname}, inplace = True)
         # Return
         return( df_hashes )
+    # Estimate Similarity
+    def estimate_similarity( self, df_trajectory_processed, df_type = 'pandas' ):
+        # Assert Implemented Methods
+        assert df_type in { 'pandas' }, 'estimate_similarity@<TrajectoryHasherJacardEstimation>: df_type = "{}" is not implemented!'.format( df_type )
+        # Estimate
+        if( df_type == 'pandas' ):
+            # Get Hashes
+            df_hashes = self.hash( df_trajectory_processed, df_type = 'pandas' )
+            # Extract
+            ## ID Users
+            id_users = df_hashes['id_user'].tolist()
+            ## Hashes
+            hashes_np = df_hashes[
+                [ x for x in df_hashes.columns if x.startswith('hash_') ]
+            ].values
+            # Loop Over Users
+            result = []
+            for i, (id_user, hash_vector) in enumerate(zip( id_users, hashes_np )):
+                # Skip Last Row
+                if( i == (len(id_users) - 1) ):
+                    continue
+                #
+                for j, n_common in enumerate( np.sum( hashes_np[(i+1):] == hash_vector, axis = 1 ) ):
+                    id_user_other = id_users[ (j+i+1) ]
+                    result.append( [ id_user, id_user_other, n_common / (2*self.n_hashes) ] ) # DEBUG! WHY 2* DENOMINATOR?
+            # Convert to DataFrame
+            df_user_estimated_similarities = pd.DataFrame(
+                result,
+                columns = [ 'id_user', 'id_user_other', 'similarity_estimated' ]
+            )
+        # Return
+        return( df_user_estimated_similarities )
+        
 ## MinHash Mohsen Implementation
 ### Auxilary Class: Calculator
 class Calculator:
@@ -131,7 +169,8 @@ class Calculator:
             h = ( self.a * x + self.b ) % HASHPRIME
             minhash = min( minhash, h )
         # Result
-        result = Calculator.reverse_bytes( minhash, 6 )
+        # result = Calculator.reverse_bytes( minhash, 6 )
+        result = minhash
         # Return
         return( result )
 ## Main
@@ -177,8 +216,11 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
         result = np.zeros( len(ts), dtype = np.int64 )
         for i, (t, lat, lng) in enumerate( zip( ts, lats, lngs ) ):
             cell = lat_lng_to_location_id[(lat, lng)]
-            result[i] = int( TrajectoryHasherMinHash.bin_padded( t )[-16:] + \
-                TrajectoryHasherMinHash.bin_padded(cell, 16)[-16:], 2 )
+            result[i] = int(
+                TrajectoryHasherMinHash.bin_padded( t )[-16:] + \
+                TrajectoryHasherMinHash.bin_padded(cell, 16)[-16:],
+                2
+            )
         return( result )
     
     # Constructor
@@ -203,7 +245,7 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
         )
         return
     # Bucketize
-    def hash( self, df_trajectory_processed, df_type = 'pandas' ):
+    def hash( self, df_trajectory_processed, df_type = 'pandas', return_features_list = False ):
         # Assert Implemented Methods
         assert df_type in { 'pandas' }, 'hash@<TrajectoryHasherMinHash>: df_type = "{}" is not implemented!'.format( df_type )
         # Hash
@@ -229,6 +271,9 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
             id_users = df_trajectory_processed['id_user'].unique()
             results_hashes = np.zeros( (len(id_users), self.n_hashes), dtype = np.int64 )
             results_id_users = np.zeros( len(id_users), dtype = np.int64 )
+            if( return_features_list ):
+                results_t_and_cell_int_list = []
+            # Main Loop
             for i, id_user in enumerate(id_users):
                 # Store Id User
                 results_id_users[i] = id_user
@@ -236,6 +281,9 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
                 features_int_id_user_list = df_trajectory_processed[
                     df_trajectory_processed['id_user'] == id_user
                 ]['t_and_cell_int'].tolist()
+                # Add Features List
+                if( return_features_list ):
+                    results_t_and_cell_int_list.append( features_int_id_user_list )
                 # Calculate Hashes
                 for j, calculator in enumerate(self.calculators):
                     hash_int = calculator.hash( features_int_id_user_list )
@@ -247,9 +295,43 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
             _dict.update({
                 'hash_{}'.format(i): v for i, v in enumerate( results_hashes.T )
             })
+            ## Add Features List
+            if( return_features_list ):
+                _dict.update({
+                    't_and_cell_int_list': results_t_and_cell_int_list
+                })
             df_hashes = pd.DataFrame( _dict )
-            
-        #################################################
-        
-        #################################################
+        # Return
         return( df_hashes )
+    # Estimate Similarity
+    def estimate_similarity( self, df_trajectory_processed, df_type = 'pandas' ):
+        # Assert Implemented Methods
+        assert df_type in { 'pandas' }, 'estimate_similarity@<TrajectoryHasherMinHash>: df_type = "{}" is not implemented!'.format( df_type )
+        # Estimate
+        if( df_type == 'pandas' ):
+            # Get Hashes
+            df_hashes = self.hash( df_trajectory_processed, df_type = 'pandas' )
+            # Extract
+            ## ID Users
+            id_users = df_hashes['id_user'].tolist()
+            ## Hashes
+            hashes_np = df_hashes[
+                [ x for x in df_hashes.columns if x.startswith('hash_') ]
+            ].values
+            # Loop Over Users
+            result = []
+            for i, (id_user, hash_vector) in enumerate(zip( id_users, hashes_np )):
+                # Skip Last Row
+                if( i == (len(id_users) - 1) ):
+                    continue
+                #
+                for j, n_common in enumerate( np.sum( hashes_np[(i+1):] == hash_vector, axis = 1 ) ):
+                    id_user_other = id_users[ (j+i+1) ]
+                    result.append( [ id_user, id_user_other, n_common / self.n_hashes ] ) # DEBUG! WHY 2* DENOMINATOR?
+            # Convert to DataFrame
+            df_user_estimated_similarities = pd.DataFrame(
+                result,
+                columns = [ 'id_user', 'id_user_other', 'similarity_estimated' ]
+            )
+        # Return
+        return( df_user_estimated_similarities )

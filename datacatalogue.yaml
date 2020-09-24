@@ -57,3 +57,11 @@ df_user_hashes:
   columns:
     id_user: (int) user identifier
     hashes: (list/Array[Int]) hashes assigned to each user for fast comparison of users.
+# User Estimated Similarities
+df_user_estimated_similarities:
+  description: "Estimated similarity of two trajectories based on hashes."
+  type: pandas.dataframe, spark.dataframe
+  columns:
+    id_user: (int) user identifier
+    id_user_other: (int) user identifier compared with `id_user_other`
+    similarity_estimated: (float) similarity from 0.0 to 1.0
