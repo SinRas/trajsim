@@ -9,7 +9,11 @@ import numpy as np
 import pandas as pd
 
 # Parameters
+# HASHPRIME = 11
+# HASHPRIME = 101
+# HASHPRIME = 5011
 HASHPRIME = 2038074743
+# HASHPRIME = 988666444411111
 
 # Methods
 
@@ -131,7 +135,8 @@ class Calculator:
             h = ( self.a * x + self.b ) % HASHPRIME
             minhash = min( minhash, h )
         # Result
-        result = Calculator.reverse_bytes( minhash, 6 )
+        # result = Calculator.reverse_bytes( minhash, 6 )
+        result = minhash
         # Return
         return( result )
 ## Main
@@ -177,8 +182,11 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
         result = np.zeros( len(ts), dtype = np.int64 )
         for i, (t, lat, lng) in enumerate( zip( ts, lats, lngs ) ):
             cell = lat_lng_to_location_id[(lat, lng)]
-            result[i] = int( TrajectoryHasherMinHash.bin_padded( t )[-16:] + \
-                TrajectoryHasherMinHash.bin_padded(cell, 16)[-16:], 2 )
+            result[i] = int(
+                TrajectoryHasherMinHash.bin_padded( t )[-16:] + \
+                TrajectoryHasherMinHash.bin_padded(cell, 16)[-16:],
+                2
+            )
         return( result )
     
     # Constructor
