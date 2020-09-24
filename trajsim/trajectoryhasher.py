@@ -110,6 +110,39 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
                 df_hashes.rename(columns={'location_indices':colname}, inplace = True)
         # Return
         return( df_hashes )
+    # Estimate Similarity
+    def estimate_similarity( self, df_trajectory_processed, df_type = 'pandas' ):
+        # Assert Implemented Methods
+        assert df_type in { 'pandas' }, 'estimate_similarity@<TrajectoryHasherJacardEstimation>: df_type = "{}" is not implemented!'.format( df_type )
+        # Estimate
+        if( df_type == 'pandas' ):
+            # Get Hashes
+            df_hashes = self.hash( df_trajectory_processed, df_type = 'pandas' )
+            # Extract
+            ## ID Users
+            id_users = df_hashes['id_user'].tolist()
+            ## Hashes
+            hashes_np = df_hashes[
+                [ x for x in df_hashes.columns if x.startswith('hash_') ]
+            ].values
+            # Loop Over Users
+            result = []
+            for i, (id_user, hash_vector) in enumerate(zip( id_users, hashes_np )):
+                # Skip Last Row
+                if( i == (len(id_users) - 1) ):
+                    continue
+                #
+                for j, n_common in enumerate( np.sum( hashes_np[(i+1):] == hash_vector, axis = 1 ) ):
+                    id_user_other = id_users[ (j+i+1) ]
+                    result.append( [ id_user, id_user_other, n_common / (2*self.n_hashes) ] ) # DEBUG! WHY 2* DENOMINATOR?
+            # Convert to DataFrame
+            df_user_estimated_similarities = pd.DataFrame(
+                result,
+                columns = [ 'id_user', 'id_user_other', 'similarity_estimated' ]
+            )
+        # Return
+        return( df_user_estimated_similarities )
+        
 ## MinHash Mohsen Implementation
 ### Auxilary Class: Calculator
 class Calculator:
@@ -258,12 +291,43 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
             _dict.update({
                 'hash_{}'.format(i): v for i, v in enumerate( results_hashes.T )
             })
-            _dict.update({
-                't_and_cell_int_list': results_t_and_cell_int_list
-            })
+            ## Add Features List
+            if( return_features_list ):
+                _dict.update({
+                    't_and_cell_int_list': results_t_and_cell_int_list
+                })
             df_hashes = pd.DataFrame( _dict )
-            
-        #################################################
-        
-        #################################################
+        # Return
         return( df_hashes )
+    # Estimate Similarity
+    def estimate_similarity( self, df_trajectory_processed, df_type = 'pandas' ):
+        # Assert Implemented Methods
+        assert df_type in { 'pandas' }, 'estimate_similarity@<TrajectoryHasherMinHash>: df_type = "{}" is not implemented!'.format( df_type )
+        # Estimate
+        if( df_type == 'pandas' ):
+            # Get Hashes
+            df_hashes = self.hash( df_trajectory_processed, df_type = 'pandas' )
+            # Extract
+            ## ID Users
+            id_users = df_hashes['id_user'].tolist()
+            ## Hashes
+            hashes_np = df_hashes[
+                [ x for x in df_hashes.columns if x.startswith('hash_') ]
+            ].values
+            # Loop Over Users
+            result = []
+            for i, (id_user, hash_vector) in enumerate(zip( id_users, hashes_np )):
+                # Skip Last Row
+                if( i == (len(id_users) - 1) ):
+                    continue
+                #
+                for j, n_common in enumerate( np.sum( hashes_np[(i+1):] == hash_vector, axis = 1 ) ):
+                    id_user_other = id_users[ (j+i+1) ]
+                    result.append( [ id_user, id_user_other, n_common / self.n_hashes ] ) # DEBUG! WHY 2* DENOMINATOR?
+            # Convert to DataFrame
+            df_user_estimated_similarities = pd.DataFrame(
+                result,
+                columns = [ 'id_user', 'id_user_other', 'similarity_estimated' ]
+            )
+        # Return
+        return( df_user_estimated_similarities )
