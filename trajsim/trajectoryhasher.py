@@ -75,8 +75,8 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
             id_timestamps_selected = np.random.choice(
                 np.arange( id_timestamp_min, id_timestamp_max+1 ),
                 self.n_hashes,
-                replace = True
-            )
+                replace = False
+            ) if self.n_hashes < (id_timestamp_max - id_timestamp_min + 1) else list(range( id_timestamp_min, id_timestamp_max+1 ))
             id_timestamps_selected_set = set(id_timestamps_selected)
             # Filter
             df_result = df_trajectory_processed[
@@ -245,7 +245,7 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
         )
         return
     # Bucketize
-    def hash( self, df_trajectory_processed, df_type = 'pandas' ):
+    def hash( self, df_trajectory_processed, df_type = 'pandas', return_features_list = False ):
         # Assert Implemented Methods
         assert df_type in { 'pandas' }, 'hash@<TrajectoryHasherMinHash>: df_type = "{}" is not implemented!'.format( df_type )
         # Hash
@@ -271,7 +271,9 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
             id_users = df_trajectory_processed['id_user'].unique()
             results_hashes = np.zeros( (len(id_users), self.n_hashes), dtype = np.int64 )
             results_id_users = np.zeros( len(id_users), dtype = np.int64 )
-            results_t_and_cell_int_list = []
+            if( return_features_list ):
+                results_t_and_cell_int_list = []
+            # Main Loop
             for i, id_user in enumerate(id_users):
                 # Store Id User
                 results_id_users[i] = id_user
@@ -279,7 +281,9 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
                 features_int_id_user_list = df_trajectory_processed[
                     df_trajectory_processed['id_user'] == id_user
                 ]['t_and_cell_int'].tolist()
-                results_t_and_cell_int_list.append( features_int_id_user_list )
+                # Add Features List
+                if( return_features_list ):
+                    results_t_and_cell_int_list.append( features_int_id_user_list )
                 # Calculate Hashes
                 for j, calculator in enumerate(self.calculators):
                     hash_int = calculator.hash( features_int_id_user_list )
