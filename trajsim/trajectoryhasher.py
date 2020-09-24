@@ -72,15 +72,16 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
             id_timestamp_min = df_trajectory_processed['id_timestamp'].min()
             id_timestamp_max = df_trajectory_processed['id_timestamp'].max()
             # Select ID TimeStamp for Hashes
-            id_timestamps_selected = set(np.random.choice(
+            id_timestamps_selected = np.random.choice(
                 np.arange( id_timestamp_min, id_timestamp_max+1 ),
                 self.n_hashes,
                 replace = True
-            ))
+            )
+            id_timestamps_selected_set = set(id_timestamps_selected)
             # Filter
             df_result = df_trajectory_processed[
                 df_trajectory_processed['id_timestamp'].map(
-                    lambda x:  x in id_timestamps_selected
+                    lambda x:  x in id_timestamps_selected_set
                 )
             ].copy().sort_values(['id_user', 'id_timestamp'])
             # Index Locations
