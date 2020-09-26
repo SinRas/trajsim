@@ -112,11 +112,18 @@ class SpacePartitionerBase:
         while( (n_split_size_max >= splitting_limit) and ( n_split_size_max != n_split_size_max_prev ) ):
             n_split_size_max_prev = n_split_size_max
             n_split_size_max = self._traverse_once_dict( _dict, splitting_limit )
+        # Store
+        self.partitions = _dict
         # Return
         return( _dict, n_split_size_max )
+    # Fit
+    def fit( self, points, splitting_limit ):
+        _ = self.traverse_till_convergence_points( points, splitting_limit )
+        return
     # Label Point
-    def _label_point( self, _partitions, _point ):
+    def _label_point( self, _point ):
         # Current Dictionary
+        _partitions = self.partitions
         _dict = _partitions if not '' in _partitions else _partitions['']
         # While True!
         _label = ''
