@@ -34,14 +34,14 @@ class TrajectoryGenerationHourlyDITRAS:
     def _initialize( self ):
         ########################################################################
         # Markov Diary Generator
-        self.smdg = pd.read_csv(self.path_markov_diary_generator_matrix).values
+        self.smdg = pd.read_csv(self.path_markov_diary_generator_matrix, header = None).values
         self.mdg = MarkovDiaryGenerator()
         self.mdg._create_empty_markov_chain()
         n_rows, n_cols = self.smdg.shape
         for i in range(n_rows):
             for j in range(n_cols):
                 # Skip Nans
-                if( np.isnan( self.smdg[i,j] ) ):
+                if( np.isnan( self.smdg[i,j] ) or self.smdg[i,j] == 0 ):
                     continue
                 # Extract Info
                 ## Location
