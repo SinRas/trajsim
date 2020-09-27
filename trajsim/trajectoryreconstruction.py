@@ -182,7 +182,7 @@ class TrajectoryReconstructorLinear( TrajectoryReconstructorBase ):
                         ) )
                 
                 # Last TimeStamp
-                id_timestamp_last, lat_last, lng_last = x_arr[0]
+                id_timestamp_last, lat_last, lng_last = x_arr[-1]
                 for id_timestamp in range( id_timestamp_last, id_timestamp_max+1 ):
                     result.append( (id_timestamp, lat_last, lng_last) )
                 
