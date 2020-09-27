@@ -6,9 +6,24 @@ Methods that get a non-regular-stepped trajectory and output a fixed-step trajec
 import numpy as np
 import pandas as pd
 
+import pyspark.sql.functions as sql_functions
+import pyspark.sql.types as sql_types
+from pyspark.sql import Window
 # Parameters
+SCHEMA_DATA_POINT = sql_types.StructType([
+    sql_types.StructField( 'id_timestamp', sql_types.IntegerType(), False ),
+    sql_types.StructField( 'lat', sql_types.DoubleType(), False ),
+    sql_types.StructField( 'lng', sql_types.DoubleType(), False ),
+])
 
 # Methods
+## Gather Data Points
+def gather_data_point( id_timestamp, lat, lng ):
+    return( (id_timestamp, lat, lng) )
+udf_gather_data_point = sql_functions.udf(
+    gather_data_point,
+    SCHEMA_DATA_POINT
+)
 
 # Classes
 ## Base
@@ -53,7 +68,7 @@ class TrajectoryReconstructorLinear( TrajectoryReconstructorBase ):
     # Reconstruct
     def reconstruct( self, df_trajectory_bucketed, df_type = 'pandas' ):
         # Assert Implemented Methods
-        assert df_type in { 'pandas' }, 'reconstruct@<TrajectoryReconstructorLinear>: df_type = "{}" is not implemented!'.format( df_type )
+        assert df_type in { 'pandas', 'spark' }, 'reconstruct@<TrajectoryReconstructorLinear>: df_type = "{}" is not implemented!'.format( df_type )
         # Reconstruct
         if( df_type == 'pandas' ):
             # Sort and Copy
@@ -122,5 +137,94 @@ class TrajectoryReconstructorLinear( TrajectoryReconstructorBase ):
                     columns = [ 'id_user', 'id_timestamp', 'lat', 'lng' ]
                 )
             ]).sort_values(['id_user', 'id_timestamp']).reset_index( drop = True )
+        elif( df_type == 'spark' ):
+            # ID TimeStamp Bounds
+            row = df_trajectory_bucketed.agg(
+                sql_functions.min( sql_functions.col("id_timestamp") ).alias("id_timestamp_min"),
+                sql_functions.max( sql_functions.col("id_timestamp") ).alias("id_timestamp_max")
+            ).head()
+            id_timestamp_min, id_timestamp_max = row['id_timestamp_min'], row['id_timestamp_max']
+            # Define Imputer Function
+            def linear_interpolator( x_arr ):
+                # Result
+                result = []
+                # Sort by TimeStamp
+                x_arr = sorted( x_arr, key = lambda x: x[0] )
+                
+                # First TimeStamp
+                id_timestamp_first, lat_first, lng_first = x_arr[0]
+                for id_timestamp in range( id_timestamp_min, id_timestamp_first ):
+                    result.append( (id_timestamp, lat_first, lng_first) )
+                
+                # Linear Reconstruction
+                for data_now, data_next in zip( x_arr[:-1], x_arr[1:] ):
+                    # Extract Info
+                    id_timestamp_now, lat_now, lng_now = data_now
+                    id_timestamp_next, lat_next, lng_next = data_next
+                    # Add Now
+                    result.append( (id_timestamp_now, lat_now, lng_now) )
+                    # Skip Linear Interpolation
+                    assert id_timestamp_next > id_timestamp_now, 'Sorting has gone wrong!'
+                    if( (id_timestamp_next - id_timestamp_now) == 1 ):
+                        continue
+                    # Linear Interpolation
+                    ## Slopes
+                    dt = id_timestamp_next - id_timestamp_now
+                    slope_lat = (lat_next - lat_now) / dt
+                    slope_lng = (lng_next - lng_now) / dt
+                    ## Add Inner Points
+                    for i in range(  1, id_timestamp_next - id_timestamp_now ):
+                        id_timestamp = id_timestamp_now + i
+                        result.append( (
+                            id_timestamp,
+                            lat_now + i * slope_lat,
+                            lng_now + i * slope_lng
+                        ) )
+                
+                # Last TimeStamp
+                id_timestamp_last, lat_last, lng_last = x_arr[-1]
+                for id_timestamp in range( id_timestamp_last, id_timestamp_max+1 ):
+                    result.append( (id_timestamp, lat_last, lng_last) )
+                
+                # Return
+                return( result )
+            udf_linear_interpolator = sql_functions.udf(
+                linear_interpolator,
+                sql_types.ArrayType(
+                    SCHEMA_DATA_POINT,
+                    False
+                )
+            )
+            # Aggregate, Apply UDF & Explode
+            ## Aggregate Data Points
+            df_result = df_trajectory_bucketed.withColumn(
+                "data_point",
+                udf_gather_data_point(
+                    sql_functions.col("id_timestamp"),
+                    sql_functions.col("lat"),
+                    sql_functions.col("lng"),
+                )
+            ).groupby("id_user").agg(
+                sql_functions.collect_list(
+                    sql_functions.col("data_point")
+                ).alias("data_point_list")
+            )
+            ## Apply Linear Interpolation
+            df_result = df_result.select(
+                "id_user",
+                udf_linear_interpolator(
+                    sql_functions.col("data_point_list")
+                ).alias("data_point_list")
+            )
+            ## Explode to Comply with DataCatalogue
+            df_result = df_result.withColumn(
+                "data_point",
+                sql_functions.explode( sql_functions.col("data_point_list") )
+            ).select(
+                "id_user",
+                "data_point.id_timestamp",
+                "data_point.lat",
+                "data_point.lng"
+            )
         # Return
         return( df_result )

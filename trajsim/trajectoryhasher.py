@@ -8,6 +8,9 @@ from typing import Set, List
 import numpy as np
 import pandas as pd
 
+import pyspark.sql.functions as sql_functions
+import pyspark.sql.types as sql_types
+from pyspark.sql import Window
 # Parameters
 # HASHPRIME = 11
 # HASHPRIME = 101
@@ -65,7 +68,7 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
     # Hash
     def hash( self, df_trajectory_processed, df_type = 'pandas' ):
         # Assert Implemented Methods
-        assert df_type in { 'pandas' }, 'hash@<TrajectoryHasherJacardEstimation>: df_type = "{}" is not implemented!'.format( df_type )
+        assert df_type in { 'pandas', 'spark' }, 'hash@<TrajectoryHasherJacardEstimation>: df_type = "{}" is not implemented!'.format( df_type )
         # Hash
         if( df_type == 'pandas' ):
             # Bounds
@@ -108,6 +111,49 @@ class TrajectoryHasherJacardEstimation(TrajectoryHasherBase):
                 # Rename New Column
                 colname = 'hash_{}'.format( i )
                 df_hashes.rename(columns={'location_indices':colname}, inplace = True)
+        elif( df_type == 'spark' ):
+            # ID TimeStamp Bounds
+            row = df_trajectory_processed.agg(
+                sql_functions.min( sql_functions.col("id_timestamp") ).alias("id_timestamp_min"),
+                sql_functions.max( sql_functions.col("id_timestamp") ).alias("id_timestamp_max")
+            ).head()
+            id_timestamp_min, id_timestamp_max = row['id_timestamp_min'], row['id_timestamp_max']
+            # Chosen TimeStamps
+            id_timestamps_selected = np.random.choice(
+                np.arange( id_timestamp_min, id_timestamp_max+1 ),
+                self.n_hashes,
+                replace = False
+            ).tolist() if self.n_hashes < (id_timestamp_max - id_timestamp_min + 1) else list(range( id_timestamp_min, id_timestamp_max+1 ))
+            # Create SparkDataFrame
+            df_id_timestamps = self.params['spark'].createDataFrame(
+                [ [id_timestamp, 'hash_{}'.format(i)] for i, id_timestamp in enumerate(id_timestamps_selected) ],
+                schema = sql_types.StructType([
+                    sql_types.StructField( 'id_timestamp', sql_types.IntegerType(), False ),
+                    sql_types.StructField( 'hash_name', sql_types.StringType(), False ),
+                ])
+            )
+            # ID Locations
+            df_location_ids = df_trajectory_processed.select("lat", "lng").\
+                distinct().withColumn(
+                    "id_location",
+                    sql_functions.row_number().over(
+                        Window.orderBy("lat", "lng")
+                    )
+                )
+            # Join Hashes
+            df_result = df_trajectory_processed.join(
+                df_id_timestamps,
+                on = [ 'id_timestamp' ],
+                how = 'inner'
+            ).join(
+                df_location_ids,
+                on = [ 'lat', 'lng' ],
+                how = 'inner'
+            )
+            # Turn Into Table
+            df_hashes = df_result.groupby("id_user").\
+                pivot( "hash_name" ).\
+                agg( sql_functions.first( "id_location" ) )
         # Return
         return( df_hashes )
     # Estimate Similarity
@@ -247,7 +293,7 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
     # Bucketize
     def hash( self, df_trajectory_processed, df_type = 'pandas', return_features_list = False ):
         # Assert Implemented Methods
-        assert df_type in { 'pandas' }, 'hash@<TrajectoryHasherMinHash>: df_type = "{}" is not implemented!'.format( df_type )
+        assert df_type in { 'pandas', 'spark' }, 'hash@<TrajectoryHasherMinHash>: df_type = "{}" is not implemented!'.format( df_type )
         # Hash
         if( df_type == 'pandas' ):
             # Create Lat/Lng to ID Dictionary
@@ -301,6 +347,49 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
                     't_and_cell_int_list': results_t_and_cell_int_list
                 })
             df_hashes = pd.DataFrame( _dict )
+        elif( df_type == 'spark' ):
+            # ID Locations
+            df_location_ids = df_trajectory_processed.select("lat", "lng").\
+                distinct().withColumn(
+                    "id_location",
+                    sql_functions.row_number().over(
+                        Window.orderBy("lat", "lng")
+                    )
+                )
+            # Ratio
+            n_id_locations = df_location_ids.count()
+            alpha = 10 ** ( int(np.log10( n_id_locations )) + 1 )
+            # Add Integer Feature
+            df_int_featured = df_trajectory_processed.join(
+                df_location_ids,
+                on = [ 'lat', 'lng' ],
+                how = 'inner'
+            ).select(
+                "id_user",
+                (
+                    sql_functions.col("id_timestamp") * alpha + \
+                    sql_functions.col("id_location")
+                ).cast("long").alias("int_feature")
+            )
+            # As and Bs
+            As = [ 1 + random.randrange( HASHPRIME - 1 ) for _ in range(self.n_hashes) ]
+            Bs = [ random.randrange( HASHPRIME ) for _ in range(self.n_hashes) ]
+            def all_hashes( x ):
+                return([ (a*x+b)%HASHPRIME for a,b in zip(As,Bs) ])
+            udf_all_hashes = sql_functions.udf(
+                all_hashes,
+                sql_types.StructType([
+                    sql_types.StructField( 'hash_{}'.format(i), sql_types.LongType(), False ) for i in range(self.n_hashes)
+                ])
+            )
+            # Main
+            aggs = [
+                sql_functions.min( sql_functions.col("hash_{}".format(i)) ).alias("hash_{}".format(i)) for i in range(self.n_hashes)
+            ]
+            df_hashes = df_int_featured.withColumn(
+                "all_hashes",
+                udf_all_hashes( sql_functions.col("int_feature").cast("long") )
+            ).select( "id_user", "all_hashes.*" ).groupby("id_user").agg( *aggs )
         # Return
         return( df_hashes )
     # Estimate Similarity
