@@ -370,26 +370,17 @@ class TrajectoryHasherMinHash(TrajectoryHasherBase):
                     sql_functions.col("id_timestamp") * alpha + \
                     sql_functions.col("id_location")
                 ).cast("long").alias("int_feature")
-            )
+            ).repartition( 64 )
             # As and Bs
             As = [ 1 + random.randrange( HASHPRIME - 1 ) for _ in range(self.n_hashes) ]
             Bs = [ random.randrange( HASHPRIME ) for _ in range(self.n_hashes) ]
-            def all_hashes( x ):
-                return([ (a*x+b)%HASHPRIME for a,b in zip(As,Bs) ])
-            udf_all_hashes = sql_functions.udf(
-                all_hashes,
-                sql_types.StructType([
-                    sql_types.StructField( 'hash_{}'.format(i), sql_types.LongType(), False ) for i in range(self.n_hashes)
-                ])
-            )
             # Main
             aggs = [
                 sql_functions.min( sql_functions.col("hash_{}".format(i)) ).alias("hash_{}".format(i)) for i in range(self.n_hashes)
             ]
-            df_hashes = df_int_featured.withColumn(
-                "all_hashes",
-                udf_all_hashes( sql_functions.col("int_feature").cast("long") )
-            ).select( "id_user", "all_hashes.*" ).groupby("id_user").agg( *aggs )
+            df_hashes = df_int_featured.select(*(['id_user'] + [
+                ( (a*sql_functions.col("int_feature")+b)%HASHPRIME ).cast("int").alias('hash_{}'.format(i)) for i,(a,b) in enumerate(zip(As,Bs))
+            ])).groupby("id_user").agg( *aggs )
         # Return
         return( df_hashes )
     # Estimate Similarity
