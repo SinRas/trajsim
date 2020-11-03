@@ -175,8 +175,8 @@ class BinaryPartitioner( SpacePartitionerBase ):
         # Parts
         _indices_front = np.matmul( _points - _center, _ray ) >= 0
         _parts = [
-        _points[ _indices_front, : ],
-        _points[ ~_indices_front, : ]
+            _points[ _indices_front, : ],
+            _points[ ~_indices_front, : ]
         ]
         # New Partitioner
         def _partitioner( _point ):

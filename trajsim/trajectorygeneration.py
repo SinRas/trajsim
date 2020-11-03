@@ -34,7 +34,7 @@ class TrajectoryGenerationHourlyDITRAS:
     def _initialize( self ):
         ########################################################################
         # Markov Diary Generator
-        self.smdg = pd.read_csv(self.path_markov_diary_generator_matrix, header = None).values
+        self.smdg = pd.read_csv( self.path_markov_diary_generator_matrix, header = None ).values
         self.mdg = MarkovDiaryGenerator()
         self.mdg._create_empty_markov_chain()
         n_rows, n_cols = self.smdg.shape
@@ -56,10 +56,13 @@ class TrajectoryGenerationHourlyDITRAS:
         self.ditras = Ditras( self.mdg )
         ########################################################################
         # Tessellation Load
-        self.df_tehran_pop = pd.read_csv('../data/tehran_pop_1395.csv')
-        self.df_tehran_pop['population'] = self.df_tehran_pop['population'].map( lambda x: int(x.replace(',','')) )
+        self.df_tehran_pop = pd.read_csv( self.path_tessellation )
+        self.df_tehran_pop = self.df_tehran_pop[
+            self.df_tehran_pop['population'] != 0
+        ].reset_index()
+        # self.df_tehran_pop['population'] = self.df_tehran_pop['population'].map( lambda x: int(float(str(x).replace(',',''))) )
         self.df_tehran_pop['tile_id'] = self.df_tehran_pop.index
-        self.df_tehran_pop = self.df_tehran_pop[['tile_id', 'population', 'lat', 'lng', 'location_name']]
+        self.df_tehran_pop = self.df_tehran_pop[['tile_id', 'population', 'lat', 'lng']]
         self.df_tehran_pop_gpd = gpd.GeoDataFrame(
             self.df_tehran_pop,
             geometry = gpd.points_from_xy(
@@ -85,13 +88,20 @@ class TrajectoryGenerationHourlyDITRAS:
             )
         # Main
         dfs = []
-        for i in range( n_users ):
+        starting_locations = np.random.choice(
+            self.df_tehran_pop_gpd['tile_id'],
+            size = n_users,
+            replace = True,
+            p = self.df_tehran_pop_gpd['population'] / self.df_tehran_pop_gpd['population'].sum()
+        )
+        for i, starting_location in zip( range( n_users ), starting_locations ):
             id_user = i + 1
             # Generate
             df = self.ditras.generate(
                 start_time,
                 end_time,
                 self.df_tehran_pop_gpd,
+                starting_locations = [ starting_location ],
                 relevance_column = 'population',
                 show_progress = False
             )
