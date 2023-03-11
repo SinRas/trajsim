@@ -330,10 +330,10 @@ class TrajectoryGenerationDITRAS:
         # Main
         dfs = []
         starting_locations = np.random.choice(
-            self.df_tehran_pop_gpd['tile_id'],
+            self.df_gpd['tile_id'],
             size = n_users,
             replace = True,
-            p = self.df_tehran_pop_gpd['population'] / self.df_tehran_pop_gpd['population'].sum()
+            p = self.df_gpd['relevance'] / self.df_gpd['relevance'].sum()
         )
         for i, starting_location in zip( range( n_users ), starting_locations ):
             id_user = i + 1
@@ -343,7 +343,9 @@ class TrajectoryGenerationDITRAS:
                 end_time,
                 self.df_gpd,
                 relevance_column = 'relevance',
-                show_progress = False
+                show_progress = False,
+                n_agents = 1,
+                starting_locations=[starting_location]
             )
             # Set ID User
             df['uid'] = id_user
