@@ -34,6 +34,7 @@ class MDGMatrix(MarkovDiaryGenerator):
     # Constructor
     def __init__(self, fp_matrix, name='Matrix Markov Diary'):
         super().__init__(name)
+        self.time_resolution = 60*60
         self.fp_matrix = fp_matrix
         self.smdg = pd.read_csv(self.fp_matrix, header = None).values  # TODO: specific formatting
         self._create_empty_markov_chain()
@@ -62,6 +63,7 @@ class MDGDitras(MarkovDiaryGenerator):
     # Constructor
     def __init__(self, fp_ditras_diary, name='DITRAS Markov Diary'):
         super().__init__(name)
+        self.time_resolution = 60*60
         self.fp_ditras_diary = fp_ditras_diary
         with open(self.fp_ditras_diary, 'rb') as in_file:
             self.diary_generator = pickle.load(in_file)
@@ -76,6 +78,7 @@ class MDGDitras30min(MDGDitras):
     # Constructor
     def __init__(self, fp_ditras_diary, name='DITRAS Markov Diary'):
         self._time_slot_length = '30min'
+        self.time_resolution = 30*60
         self.T = 24*2
         self.dt = datetime.timedelta(minutes=30)
         super().__init__(fp_ditras_diary, name)
@@ -288,6 +291,34 @@ class GeoPandasTehran:
         return
 
 ## Base
+class DitrasTimeFlexible(Ditras):
+    def __init__(self, diary_generator: MDGDitras30min, name='Ditras model', rho=0.3, gamma=0.21):
+        super().__init__(rho=rho, gamma=gamma)
+        self._diary_generator = diary_generator
+        self._name = name
+        self._rho = rho
+        self._gamma = gamma
+    # Generate Agent, Time Flexible
+    def _epr_generate_one_agent(self, agent_id, start_date, end_date):
+
+        # infer the time_steps (in hours) from the start_date and the end_date
+        delta_t = (end_date - start_date).total_seconds()
+        length_diary = int( delta_t / self._diary_generator.time_resolution )
+        
+        # generate a mobility diary for the agent
+        rand_seed_diary = np.random.randint(0,10**6)
+        diary_df = self._diary_generator.generate(length_diary, start_date, random_state=rand_seed_diary)
+
+        for i, row in diary_df.iterrows():
+            if row.abstract_location == 0:  # the agent is at home
+                self._trajectories_.append((agent_id, row.datetime, self._starting_loc))
+                self._location2visits[self._starting_loc] += 1
+
+            else:  # the agent is not at home
+                next_location = self._choose_location()
+                self._trajectories_.append((agent_id, row.datetime, next_location))
+                self._location2visits[next_location] += 1
+
 class TrajectoryGenerationDITRAS:
     """Trajectory Generation using DITRAS.
     """
@@ -301,7 +332,7 @@ class TrajectoryGenerationDITRAS:
             self.mdg = MDGDitras(fp_ditras_diary=mdg_or_fp_ditras_diary)
         else:
             raise ValueError("`mdg_or_fp_ditras_diary` should be either of type 'skmob.models.markov_diary_generator.MarkovDiaryGenerator' or 'path to ditras diary'")
-        self.ditras = Ditras( self.mdg, rho = 0.6, gamma = 0.21 )  # Parameters based on paper: https://link.springer.com/article/10.1007/s10618-017-0548-4
+        self.ditras = DitrasTimeFlexible( self.mdg, rho = 0.6, gamma = 0.21 )  # Parameters based on paper: https://link.springer.com/article/10.1007/s10618-017-0548-4
         ########################################################################
         # Tessellation Load
         if isinstance(gpd_or_fp_tehran_points, gpd.GeoDataFrame):
