@@ -263,6 +263,94 @@ class MDGDitras30min(MDGDitras):
 
         diary_df = pd.DataFrame(short_diary, columns=[constants.DATETIME, 'abstract_location'])
         return diary_df
+    #################################################################################
+    #################################################################################
+    #################################################################################
+    #################################################################################
+    # Generate Trajectory
+    def generate_by_enddate(self, start_date, end_date, random_state=None):
+        """
+        Start the generation of the mobility diary.
+        
+        Parameters
+        ----------
+        start_date : datetime
+            the starting date of the generation.
+        
+        end_date : datetime
+            the ending date of the generation.
+        
+        Returns
+        -------
+        pandas DataFrame
+            the generated mobility diary.
+        """
+        current_date = start_date
+        V, i = [], 0
+        prev_state = (i, 1)  # it starts from the typical location at midnight
+        V.append(prev_state)
+        
+        if random_state is not None:
+            random.seed(random_state)
+
+        while current_date < end_date:
+
+            h = i % self.T  # the hour of the day
+
+            # select the next state in the Markov chain
+            p = list(self._markov_chain_[prev_state].values())
+            if sum(p) == 0.:
+                hh, rr = prev_state
+                next_state = ((hh + 1) % self.T, rr)
+            else:
+                index = self._weighted_random_selection(p)
+                next_state = list(self._markov_chain_[prev_state].keys())[index]
+            V.append(next_state)
+
+            j = next_state[0]
+            if j >= h:  # we are in the same day
+                i += j - h
+                current_date += (j-h)*self.dt
+            else:  # we are in the next day
+                i += self.T - h + j
+                current_date += (self.T - h + j)*self.dt
+            prev_state = next_state
+        # now we translate the temporal diary into the the mobility diary
+        current_date = start_date
+        prev, diary, other_count = V[0], [], 1
+        diary.append([current_date, 0])
+        for v in V[1:]:  # scan all the states obtained and create the synthetic time series
+            h, s = v
+            h_prev, s_prev = prev
+
+            if s == 1:  # if in that hour she visits home
+                current_date += self.dt
+                diary.append([current_date, 0])
+                other_count = 1
+            else:  # if in that hour she does NOT visit home
+
+                if h > h_prev:  # we are in the same day
+                    j = h - h_prev
+                else:  # we are in the next day
+                    j = self.T - h_prev + h
+
+                for i in range(0, j):
+                    current_date += self.dt
+                    diary.append([current_date, other_count])
+                other_count += 1
+
+            prev = v
+
+        short_diary = []
+        prev_location = -1
+        for visit_date, abstract_location in diary:
+            if visit_date > end_date:
+                break
+            if abstract_location != prev_location:
+                short_diary.append([visit_date, abstract_location])
+            prev_location = abstract_location
+        diary_df = pd.DataFrame(short_diary, columns=[constants.DATETIME, 'abstract_location'])
+        return diary_df
 ## GeoPandasPoints
 class GeoPandasTehran:
     # Constructor
@@ -292,22 +380,12 @@ class GeoPandasTehran:
 
 ## Base
 class DitrasTimeFlexible(Ditras):
-    def __init__(self, diary_generator: MDGDitras30min, name='Ditras model', rho=0.3, gamma=0.21):
-        super().__init__(rho=rho, gamma=gamma)
-        self._diary_generator = diary_generator
-        self._name = name
-        self._rho = rho
-        self._gamma = gamma
     # Generate Agent, Time Flexible
     def _epr_generate_one_agent(self, agent_id, start_date, end_date):
 
-        # infer the time_steps (in hours) from the start_date and the end_date
-        delta_t = (end_date - start_date).total_seconds()
-        length_diary = int( delta_t / self._diary_generator.time_resolution )
-        
         # generate a mobility diary for the agent
         rand_seed_diary = np.random.randint(0,10**6)
-        diary_df = self._diary_generator.generate(length_diary, start_date, random_state=rand_seed_diary)
+        diary_df = self._diary_generator.generate_by_enddate(start_date, end_date, random_state=rand_seed_diary)
 
         for i, row in diary_df.iterrows():
             if row.abstract_location == 0:  # the agent is at home
